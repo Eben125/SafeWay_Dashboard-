@@ -1,0 +1,90 @@
+{
+  "vehicles": {
+    "HV-TRUCK-101": {
+      "vehicle_id": "HV-TRUCK-101",
+      "driver_name": "Ramesh Kumar",
+      "vehicle_type": "Haul Dump Truck (60T)",
+      "username": "driver_truck101",
+      "password": "Safe#101R",
+      "assigned_mine_zone": "Pit-A West Wall",
+      "status": "active",
+      "safety_status": "safe",
+      "front_distance_m": 85.2,
+      "speed_kmh": 45.6,
+      "heading_deg": 105.4,
+      "latitude": 11.0168,
+      "longitude": 76.9558,
+      "last_updated": "2026-09-14T12:00:00.000Z"
+    }
+  },
+  "sensor_readings": {
+    "SR_1789318287091": {
+      "reading_id": "SR_1789318287091",
+      "vehicle_id": "HV-TRUCK-101",
+      "timestamp": "2026-09-14T12:00:00.000Z",
+      "front_distance_m": 85.2,
+      "speed_kmh": 45.6,
+      "engine_temp_c": 84.5,
+      "gnss_rtk_status": "FIXED (Centimeter accuracy)",
+      "latitude": 11.0168,
+      "longitude": 76.9558
+    }
+  },
+  "thermalFrames": {
+    "TF_1789318287091": {
+      "frame_id": "TF_1789318287091",
+      "vehicle_id": "HV-TRUCK-101",
+      "timestamp": "2026-09-14T12:00:00.000Z",
+      "image_url": "https://storage.googleapis.com/.../TF_1789318287091.jpg",
+      "ambient_temp_c": 18.5,
+      "max_temp_c": 86.0,
+      "target_count": 1
+    }
+  },
+  "aiDetections": {
+    "DET_1789318287091_312": {
+      "detection_id": "DET_1789318287091_312",
+      "vehicle_id": "HV-TRUCK-101",
+      "timestamp": "2026-09-14T12:00:00.000Z",
+      "label": "Pedestrian",
+      "confidence": 0.95,
+      "temperature_c": 36.8,
+      "hazard_level": "High"
+    }
+  },
+  "alerts": {
+    "V2V_ALERT_1789318287091": {
+      "alert_id": "V2V_ALERT_1789318287091",
+      "timestamp": "2026-09-14T12:00:00.000Z",
+      "severity": "CRITICAL",
+      "cascade_type": "V2V CHAIN-REACTION BRAKE ALERT",
+      "target_vehicle_id": "HV-TRUCK-102",
+      "source_vehicle_id": "HV-TRUCK-101",
+      "message": "Vehicle ahead stopped suddenly!"
+    }
+  },
+  "devices": {
+    "LWIR-CAM-01": {
+      "device_id": "LWIR-CAM-01",
+      "sensor_id": "thermal_camera",
+      "sensor_type": "Thermal Infrared (LWIR) Camera",
+      "status": "nominal"
+    }
+  },
+  "sensor_settings": {
+    "thermal_camera": {
+      "sensor_id": "thermal_camera",
+      "input_volume": 25,
+      "sampling_rate_hz": 10.0,
+      "status": "active"
+    }
+  },
+  "userSettings": {
+    "admin": {
+      "user_id": "admin",
+      "role": "admin",
+      "audio_alerts": true,
+      "map_layer": "streets"
+    }
+  }
+}

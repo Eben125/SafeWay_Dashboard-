@@ -1,0 +1,23 @@
+services:
+  # 1. The Original Sensor Simulation Backend
+  - type: web
+    name: safeway-backend
+    env: docker
+    rootDir: backend
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8000
+
+  # 2. The Fleet Management Bridge
+  - type: web
+    name: safeway-bridge
+    env: docker
+    rootDir: bridge
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8001
+      - key: SIMULATION_API_URL
+        # This dynamically connects the bridge to the backend hosted above!
+        value: https://safeway-backend.onrender.com
