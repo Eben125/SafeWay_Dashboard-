@@ -17,14 +17,14 @@ import { fetchVehicles, fetchAlerts } from './services/fleetApi';
 
 function SafeWayApp() {
   const { currentUser, isAdmin, isDriver } = useRole();
+  const [activeTab, setActiveTab] = useState('driver_cockpit');
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   useEffect(() => {
     if (isDriver && activeTab === 'fleet_admin') {
       setActiveTab('driver_cockpit');
     }
   }, [isDriver, activeTab]);
-  const [activeTab, setActiveTab] = useState('driver_cockpit');
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [snapshot, setSnapshot] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   const [alerts, setAlerts] = useState([]);
