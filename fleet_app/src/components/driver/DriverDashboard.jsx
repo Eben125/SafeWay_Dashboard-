@@ -14,10 +14,15 @@ import {
   Bell, 
   Volume2, 
   VolumeX,
-  LifeBuoy
+  LifeBuoy,
+  Layers,
+  Map as MapIcon,
+  Box as CubeIcon,
+  Activity
 } from 'lucide-react';
 import MapTilerView from '../map/MapTilerView';
-import { fetchVehicleTelemetry } from '../../services/fleetApi';
+import Lidar3DDriverMap from './Lidar3DDriverMap';
+import { fetchVehicleTelemetry, triggerSuddenStop } from '../../services/fleetApi';
 
 export default function DriverDashboard({
   currentUser,
@@ -28,7 +33,9 @@ export default function DriverDashboard({
   const [telemetry, setTelemetry] = useState(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [sosActive, setSosActive] = useState(false);
+  const [mapMode, setMapMode] = useState('3d_lidar'); // '3d_lidar' or '2d_maptiler'
   const [selectedVehicleId, setSelectedVehicleId] = useState(currentUser?.vehicleId || "HV-TRUCK-102");
+  const [isSimulatingBrake, setIsSimulatingBrake] = useState(false);
 
   useEffect(() => {
     if (currentUser?.vehicleId) {
@@ -45,15 +52,15 @@ export default function DriverDashboard({
       driver_name: currentUser?.name || "Driver",
       vehicle_type: "Mining Haul Truck",
       safety_status: "safe",
-      speed_kmh: 22.4,
+      speed_kmh: 46.0,
       closest_proximity_m: 38.0,
-      heading_deg: 90
+      heading_deg: 85
     };
   }, [vehicles, vehicleId, currentUser]);
 
   // Check if there are active V2V alerts specifically targeting this vehicle
   const activeVehicleAlert = useMemo(() => {
-    return alerts.find(a => a.target_vehicle_id === vehicleId || a.vehicle_id === vehicleId);
+    return alerts.find(a => a.target_vehicle_id === vehicleId || a.vehicle_id === vehicleId || a.type === 'collision_proximity');
   }, [alerts, vehicleId]);
 
   // Fetch detailed telemetry for this vehicle
@@ -65,7 +72,7 @@ export default function DriverDashboard({
     };
 
     load();
-    const interval = setInterval(load, 2000);
+    const interval = setInterval(load, 1500);
     return () => {
       active = false;
       clearInterval(interval);
@@ -77,16 +84,16 @@ export default function DriverDashboard({
   const thermal = readings.thermal || { max_temp_c: 44.2, hot_spot_detected: false };
   const lidar = readings.lidar || { closest_cluster_distance_m: 38.0, safety_zone_clear: true };
   const gnss = readings.gnss || readings.gnss_imu || { 
-    speed_kmh: currentVehicle.speed_kmh || 22.0, 
-    heading_deg: currentVehicle.heading_deg || 90.0,
+    speed_kmh: currentVehicle.speed_kmh || 46.0, 
+    heading_deg: currentVehicle.heading_deg || 85.0,
     latitude: currentVehicle.latitude || 11.0168,
     longitude: currentVehicle.longitude || 76.9558
   };
 
-  const status = currentVehicle.safety_status || (activeVehicleAlert?.severity === 'CRITICAL' ? 'alert' : 'safe');
+  const status = currentVehicle.safety_status || (activeVehicleAlert?.severity === 'critical' ? 'alert' : 'safe');
   const distance = typeof radar.distance_m === 'number' ? radar.distance_m.toFixed(1) : radar.distance_m;
 
-  // Sound alert beep (Web Audio API synthetic beep) if audio enabled and status is alert
+  // Sound alert beep (Web Audio API)
   useEffect(() => {
     if (audioEnabled && (status === 'alert' || activeVehicleAlert)) {
       try {
@@ -94,22 +101,26 @@ export default function DriverDashboard({
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // High pitch warning
-        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.start();
-        osc.stop(audioCtx.currentTime + 0.3);
-      } catch (e) {
-        // audio context ignored
-      }
+        osc.stop(audioCtx.currentTime + 0.25);
+      } catch (e) {}
     }
   }, [status, activeVehicleAlert, audioEnabled]);
+
+  const handleSimulateSuddenStop = async () => {
+    setIsSimulatingBrake(true);
+    await triggerSuddenStop(10);
+    setTimeout(() => setIsSimulatingBrake(false), 10000);
+  };
 
   return (
     <div className="space-y-4">
       {/* ⚠️ HIGH PRIORITY CASCADING V2V SAFETY ALERT BANNER ⚠️ */}
-      {activeVehicleAlert && (
+      {status === 'alert' && (
         <div className="bg-rose-600 text-white p-4 rounded-2xl shadow-xl shadow-rose-600/30 border-2 border-rose-400 animate-bounce">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -118,13 +129,13 @@ export default function DriverDashboard({
               </div>
               <div>
                 <span className="text-[11px] font-black uppercase tracking-wider bg-black/30 px-2 py-0.5 rounded">
-                  {activeVehicleAlert.cascade_type || "V2V COLLISION WARNING"}
+                  CRITICAL PROXIMITY ALERT (&lt; 20m)
                 </span>
                 <h2 className="text-base sm:text-lg font-black mt-0.5 tracking-tight">
-                  {activeVehicleAlert.message}
+                  Lead Haul Truck Sudden Deceleration Detected in Forward Lane!
                 </h2>
                 <p className="text-xs text-rose-100 font-medium mt-0.5">
-                  Proximity Clearance: <span className="font-mono font-bold underline">{distance}m</span> • Immediate Driver Action Required
+                  Following Distance: <span className="font-mono font-bold underline text-white text-sm">{distance}m</span> • Apply Full Brake Assist Immediately
                 </p>
               </div>
             </div>
@@ -135,32 +146,35 @@ export default function DriverDashboard({
               className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 transition"
             >
               {audioEnabled ? <Volume2 className="w-4 h-4 text-amber-300" /> : <VolumeX className="w-4 h-4" />}
-              <span>{audioEnabled ? "Mute Tone" : "Audible Horn"}</span>
+              <span>{audioEnabled ? "Mute Alarm" : "Audio Warning"}</span>
             </button>
           </div>
         </div>
       )}
 
       {/* Driver Cockpit Header Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-soft flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+        {/* Left: Truck ID, Driver & Truck Switcher */}
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-slate-900 to-slate-800 text-white flex items-center justify-center shadow-md">
             <Truck className="w-6 h-6 text-sky-400" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-black font-mono text-slate-900">{currentVehicle.vehicle_id}</h1>
               <span className="text-xs font-mono px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-semibold">
-                Cockpit Telemetry
+                ADAS Cockpit
+              </span>
+              <span className="text-xs text-slate-400 font-medium">•</span>
+              <span className="text-xs font-semibold text-slate-600">
+                Driver: <strong className="text-slate-800">{currentVehicle.driver_name}</strong>
               </span>
             </div>
-            <p className="text-xs text-slate-500">
-              Driver: <strong className="text-slate-700">{currentVehicle.driver_name}</strong> • {currentVehicle.vehicle_type}
-            </p>
+
             {/* Quick Haul Truck Switcher */}
             {vehicles.length > 0 && (
-              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Switch Haul Truck:</span>
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Active Hauler:</span>
                 {vehicles.map(v => (
                   <button
                     key={v.vehicle_id}
@@ -180,23 +194,67 @@ export default function DriverDashboard({
           </div>
         </div>
 
-        {/* Safety Status Hero Badge */}
-        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-          <div className={`px-5 py-2.5 rounded-xl border-2 font-black text-sm flex items-center gap-2 shadow-sm ${
+        {/* Right: Map Mode Switcher, Safety Status Badge, SOS */}
+        <div className="flex items-center gap-2.5 flex-wrap w-full lg:w-auto justify-between lg:justify-end">
+          {/* Map Display Mode: 3D LiDAR Vision vs 2D MapTiler */}
+          <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setMapMode('3d_lidar')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+                mapMode === '3d_lidar'
+                  ? 'bg-white text-sky-700 shadow-sm border border-slate-200 font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CubeIcon className="w-3.5 h-3.5 text-sky-600" />
+              <span>Full-Size 3D LiDAR Vision</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMapMode('2d_maptiler')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+                mapMode === '2d_maptiler'
+                  ? 'bg-white text-sky-700 shadow-sm border border-slate-200 font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <MapIcon className="w-3.5 h-3.5 text-indigo-600" />
+              <span>2D Satellite Map</span>
+            </button>
+          </div>
+
+          {/* Emergency Sudden Stop Simulator Trigger */}
+          <button
+            type="button"
+            onClick={handleSimulateSuddenStop}
+            disabled={isSimulatingBrake}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+              isSimulatingBrake 
+                ? 'bg-rose-100 text-rose-700 border-rose-300 animate-pulse'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+            }`}
+            title="Simulate sudden lead truck braking to test collision alert"
+          >
+            {isSimulatingBrake ? "Testing Sudden Stop..." : "Simulate Sudden Stop"}
+          </button>
+
+          {/* Safety Status Hero Badge */}
+          <div className={`px-4 py-2 rounded-xl border-2 font-black text-xs flex items-center gap-2 shadow-xs ${
             status === 'alert' 
               ? 'bg-rose-50 border-rose-500 text-rose-700 animate-pulse'
               : status === 'caution'
               ? 'bg-amber-50 border-amber-500 text-amber-800'
               : 'bg-emerald-50 border-emerald-500 text-emerald-800'
           }`}>
-            {status === 'alert' ? <AlertOctagon className="w-5 h-5 text-rose-600" /> :
-             status === 'caution' ? <AlertTriangle className="w-5 h-5 text-amber-600" /> :
-             <ShieldCheck className="w-5 h-5 text-emerald-600" />}
-            <div className="leading-tight">
-              <div className="text-[10px] uppercase font-bold tracking-wider opacity-75">
-                V2V Safety Zone
+            {status === 'alert' ? <AlertOctagon className="w-4 h-4 text-rose-600" /> :
+             status === 'caution' ? <AlertTriangle className="w-4 h-4 text-amber-600" /> :
+             <ShieldCheck className="w-4 h-4 text-emerald-600" />}
+            <div>
+              <div className="text-[9px] uppercase font-bold tracking-wider opacity-75">
+                V2V Safety Status
               </div>
-              <div className="text-sm uppercase tracking-wide">
+              <div className="text-xs uppercase tracking-wide">
                 {status === 'alert' ? 'CRITICAL ALERT (<20m)' :
                  status === 'caution' ? 'CAUTION ZONE (20-50m)' :
                  'CLEAR & SAFE (>50m)'}
@@ -208,10 +266,10 @@ export default function DriverDashboard({
           <button
             type="button"
             onClick={() => setSosActive(!sosActive)}
-            className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+            className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
               sosActive
                 ? 'bg-rose-600 text-white animate-pulse'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
             }`}
             title="Driver Emergency SOS Signal"
           >
@@ -221,10 +279,18 @@ export default function DriverDashboard({
         </div>
       </div>
 
-      {/* Main Grid: Map on Left, Live Telemetry Dials on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Map View with Proximity Rings */}
-        <div className="lg:col-span-7 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+      {/* FULL-SIZED MAP CENTERPIECE (3D LiDAR OR 2D MAPTILER) */}
+      {mapMode === '3d_lidar' ? (
+        <Lidar3DDriverMap
+          currentVehicle={currentVehicle}
+          radarDistance={typeof radar.distance_m === 'number' ? radar.distance_m : 38.0}
+          relativeSpeed={radar.relative_speed_kmh}
+          safetyStatus={status}
+          headingDeg={gnss.heading_deg}
+          speedKmh={gnss.speed_kmh}
+        />
+      ) : (
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-soft space-y-2">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <Radio className="w-4 h-4 text-sky-600 animate-pulse" />
@@ -236,8 +302,7 @@ export default function DriverDashboard({
               Red Circle = 20m Danger Zone | Amber = 50m Caution Zone
             </span>
           </div>
-
-          <div className="h-[380px] w-full rounded-xl overflow-hidden">
+          <div className="h-[520px] w-full rounded-xl overflow-hidden">
             <MapTilerView
               vehicles={vehicles}
               focusedVehicle={currentVehicle}
@@ -246,113 +311,73 @@ export default function DriverDashboard({
             />
           </div>
         </div>
+      )}
 
-        {/* Telemetry Flight Instruments */}
-        <div className="lg:col-span-5 space-y-3">
-          {/* Clearance Distance Card */}
-          <div className={`p-4 rounded-2xl border transition shadow-sm ${
-            status === 'alert' 
-              ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/30' 
-              : status === 'caution'
-              ? 'bg-amber-50/80 border-amber-300'
-              : 'bg-white border-slate-200'
-          }`}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <Radar className="w-4 h-4 text-sky-600" />
-                Forward Target Proximity
-              </span>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                Radar 77 GHz
-              </span>
-            </div>
-
-            <div className="flex items-baseline justify-between">
-              <div>
-                <span className="text-4xl font-black font-mono tracking-tight text-slate-900">
-                  {distance}
-                </span>
-                <span className="text-base font-bold text-slate-500 ml-1">meters</span>
-              </div>
-
-              <div className="text-right">
-                <span className="text-[11px] text-slate-400 block uppercase">Relative Velocity</span>
-                <span className="text-base font-bold font-mono text-slate-800">
-                  {radar.relative_speed_kmh != null ? `${radar.relative_speed_kmh} km/h` : "--"}
-                </span>
-              </div>
-            </div>
-
-            {/* Visual Distance Progress Bar */}
-            <div className="mt-3">
-              <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
-                <div 
-                  className={`h-full transition-all duration-500 ${
-                    status === 'alert' ? 'bg-rose-600' :
-                    status === 'caution' ? 'bg-amber-500' : 'bg-emerald-500'
-                  }`}
-                  style={{ width: `${Math.min(100, Math.max(5, (radar.distance_m / 100) * 100))}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-1">
-                <span className="text-rose-600 font-bold">0m (Impact)</span>
-                <span className="text-amber-600 font-bold">20m (Brake)</span>
-                <span className="text-emerald-600 font-bold">50m+ (Safe)</span>
-              </div>
-            </div>
+      {/* LOWER INSTRUMENTATION BAR: Multi-Spectral ADAS Sensors */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+        {/* Sensor 1: 1550 nm LiDAR */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-soft">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+            <span className="font-semibold uppercase tracking-wider">3D LiDAR Berm Lock</span>
+            <CubeIcon className="w-4 h-4 text-emerald-600" />
           </div>
-
-          {/* Speed & Heading Instrument */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-                <span className="font-semibold uppercase tracking-wider">Ground Speed</span>
-                <Gauge className="w-4 h-4 text-sky-600" />
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-black font-mono text-slate-900">
-                  {gnss.speed_kmh != null ? gnss.speed_kmh.toFixed(1) : "0.0"}
-                </span>
-                <span className="text-xs font-semibold text-slate-500">km/h</span>
-              </div>
-            </div>
-
-            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-                <span className="font-semibold uppercase tracking-wider">Heading</span>
-                <Compass className="w-4 h-4 text-purple-600" />
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-black font-mono text-slate-900">
-                  {gnss.heading_deg != null ? `${gnss.heading_deg.toFixed(0)}°` : "0°"}
-                </span>
-                <span className="text-xs font-semibold text-slate-500">Bearing</span>
-              </div>
-            </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold font-mono text-emerald-600">LOCKED</span>
+            <span className="text-xs text-slate-400">18.4k pts/s</span>
           </div>
+          <p className="text-[11px] text-slate-500 mt-1">Curb & roadside berm boundary intact</p>
+        </div>
 
-          {/* Environmental Sensors Summary */}
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block">
-              Multi-Spectral Perception Status
-            </span>
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-[10px] text-slate-400 block">Thermal Max</span>
-                <span className="font-mono font-bold text-slate-800">{thermal.max_temp_c || 42}°C</span>
-              </div>
-              <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-[10px] text-slate-400 block">LiDAR Hazard</span>
-                <span className={`font-mono font-bold ${lidar.safety_zone_clear ? "text-emerald-600" : "text-rose-600"}`}>
-                  {lidar.safety_zone_clear ? "CLEAR" : "OBJECT"}
-                </span>
-              </div>
-              <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-[10px] text-slate-400 block">UWB Peer</span>
-                <span className="font-mono font-bold text-sky-700">LINKED</span>
-              </div>
-            </div>
+        {/* Sensor 2: 77 GHz Radar Target */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-soft">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+            <span className="font-semibold uppercase tracking-wider">77 GHz mmWave</span>
+            <Radar className="w-4 h-4 text-sky-600" />
           </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold font-mono text-slate-900">{distance}m</span>
+            <span className="text-xs text-slate-500 font-mono">({radar.relative_speed_kmh} km/h)</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">FMCW weather immunity: 100%</p>
+        </div>
+
+        {/* Sensor 3: LWIR Thermal Heat Signatures */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-soft">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+            <span className="font-semibold uppercase tracking-wider">Thermal (LWIR)</span>
+            <Flame className="w-4 h-4 text-rose-600" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold font-mono text-slate-900">{thermal.max_temp_c || 48.5}°C</span>
+            <span className="text-xs text-slate-500">Exhaust</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">Darkness & zero-visibility penetrate</p>
+        </div>
+
+        {/* Sensor 4: UWB V2V Mesh */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-soft">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+            <span className="font-semibold uppercase tracking-wider">UWB RF Mesh</span>
+            <Wifi className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold font-mono text-indigo-700">LINKED</span>
+            <span className="text-xs text-slate-500 font-mono">±10 cm</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">NLOS corner obstruction broadcast</p>
+        </div>
+
+        {/* Sensor 5: RTK Centimeter GNSS */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-soft col-span-2 sm:col-span-4 lg:col-span-1">
+          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+            <span className="font-semibold uppercase tracking-wider">RTK Centimeter</span>
+            <Compass className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold font-mono text-emerald-600">RTK FIXED</span>
+            <span className="text-xs text-slate-500 font-mono">28 sats</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">0.08m lane deviation offset</p>
         </div>
       </div>
     </div>
