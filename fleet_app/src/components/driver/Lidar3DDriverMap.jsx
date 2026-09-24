@@ -1,25 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { 
-  Box, 
-  Eye, 
-  Compass, 
   Maximize2, 
   Minimize2, 
-  RotateCcw, 
   Wind, 
-  ShieldCheck, 
-  AlertTriangle, 
-  AlertOctagon,
-  Layers,
-  Radio
+  Radio, 
+  Sun, 
+  Moon, 
+  CloudFog,
+  Eye,
+  Camera
 } from 'lucide-react';
 
 /**
  * Lidar3DDriverMap
- * High-performance 3D LiDAR Synthetic Vision Cockpit Map.
+ * Immersive Full-Screen 3D LiDAR Synthetic Vision Cockpit Map.
  * Renders real-time 1550 nm point cloud, road edges, haul trucks,
- * and 20m/50m safety laser rings directly in 3D space.
+ * and 20m/50m safety laser rings directly in 3D space with Day/Night/Fog modes.
  */
 export default function Lidar3DDriverMap({
   currentVehicle,
@@ -28,8 +25,11 @@ export default function Lidar3DDriverMap({
   safetyStatus = 'safe',
   headingDeg = 85,
   speedKmh = 48,
-  lidarPoints = [],
-  cloudburstActive = false
+  visualMode = 'fog', // 'fog', 'daylight', 'night'
+  cameraView = 'chase', // 'cockpit', 'chase', 'topdown'
+  onCameraViewChange,
+  fogPenetration = true,
+  onToggleFogPenetration
 }) {
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
@@ -39,11 +39,8 @@ export default function Lidar3DDriverMap({
   const laserRingsGroupRef = useRef(null);
   const pointsMeshRef = useRef(null);
   const fogRef = useRef(null);
-
-  const [cameraView, setCameraView] = useState('chase'); // 'cockpit', 'chase', 'topdown'
-  const [fogPenetration, setFogPenetration] = useState(true);
-  const [showPointDensity, setShowPointDensity] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const ambientLightRef = useRef(null);
+  const dirLightRef = useRef(null);
 
   // Initialize Three.js 3D LiDAR Engine
   useEffect(() => {
@@ -54,38 +51,40 @@ export default function Lidar3DDriverMap({
 
     // 1. Scene & Atmosphere
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0f1d);
-    const sceneFog = new THREE.FogExp2(0x0a0f1d, 0.015);
+    scene.background = new THREE.Color(0x070c18);
+    const sceneFog = new THREE.FogExp2(0x070c18, 0.018);
     scene.fog = sceneFog;
     fogRef.current = sceneFog;
     sceneRef.current = scene;
 
     // 2. Camera
-    const camera = new THREE.PerspectiveCamera(52, width / height, 0.2, 1000);
+    const camera = new THREE.PerspectiveCamera(54, width / height, 0.2, 1000);
     cameraRef.current = camera;
-    setCameraPosition(camera, 'chase');
+    setCameraPosition(camera, cameraView);
 
     // 3. Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMappingExposure = 1.15;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     // 4. Lighting
     const ambient = new THREE.AmbientLight(0x334155, 1.8);
+    ambientLightRef.current = ambient;
     scene.add(ambient);
 
-    const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.4);
-    dirLight.position.set(40, 80, 50);
+    const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.5);
+    dirLight.position.set(40, 90, 50);
+    dirLightRef.current = dirLight;
     scene.add(dirLight);
 
     // Cyan forward LiDAR illuminator beam
-    const lidarSpot = new THREE.SpotLight(0x38bdf8, 3.5, 90, Math.PI / 3.5, 0.4, 1.2);
-    lidarSpot.position.set(0, 3.5, 2);
-    lidarSpot.target.position.set(0, 0, 45);
+    const lidarSpot = new THREE.SpotLight(0x38bdf8, 3.8, 110, Math.PI / 3.2, 0.35, 1.1);
+    lidarSpot.position.set(0, 3.6, 2);
+    lidarSpot.target.position.set(0, 0, 48);
     scene.add(lidarSpot);
     scene.add(lidarSpot.target);
 
@@ -106,7 +105,7 @@ export default function Lidar3DDriverMap({
 
     // 8. 3D LiDAR Point Cloud (1550 nm pulsed returns)
     const pointsGeo = new THREE.BufferGeometry();
-    const pointCount = 2800;
+    const pointCount = 3200;
     const positions = new Float32Array(pointCount * 3);
     const colors = new Float32Array(pointCount * 3);
 
@@ -118,13 +117,13 @@ export default function Lidar3DDriverMap({
     for (let i = 0; i < pointCount; i++) {
       const idx = i * 3;
       const angle = (Math.random() - 0.5) * 1.6;
-      const dist = 3 + Math.random() * 85;
+      const dist = 3 + Math.random() * 90;
       const x = Math.sin(angle) * dist + (Math.random() - 0.5) * 1.5;
       const z = Math.cos(angle) * dist;
       
       const isBerm = Math.abs(x) > 6.5;
       const y = isBerm 
-        ? -0.5 + Math.random() * 2.4 
+        ? -0.5 + Math.random() * 2.6 
         : -1.2 + (Math.random() - 0.5) * 0.15;
 
       positions[idx] = x;
@@ -145,10 +144,10 @@ export default function Lidar3DDriverMap({
     pointsGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
     const pointsMat = new THREE.PointsMaterial({
-      size: 0.32,
+      size: 0.35,
       vertexColors: true,
       transparent: true,
-      opacity: 0.92
+      opacity: 0.95
     });
 
     const pointsMesh = new THREE.Points(pointsGeo, pointsMat);
@@ -164,7 +163,7 @@ export default function Lidar3DDriverMap({
     // 10. Mouse Interaction (Orbit / Pan / Zoom)
     let isDragging = false;
     let prevMouse = { x: 0, y: 0 };
-    let spherical = { radius: 24, theta: 0, phi: 0.32 };
+    let spherical = { radius: 25, theta: 0, phi: 0.32 };
 
     const onMouseDown = (e) => {
       isDragging = true;
@@ -186,7 +185,7 @@ export default function Lidar3DDriverMap({
     const onMouseUp = () => { isDragging = false; };
     const onWheel = (e) => {
       e.preventDefault();
-      spherical.radius = Math.max(6, Math.min(90, spherical.radius + e.deltaY * 0.04));
+      spherical.radius = Math.max(6, Math.min(95, spherical.radius + e.deltaY * 0.04));
       updateCameraFromOrbit(camera, spherical);
     };
 
@@ -223,14 +222,14 @@ export default function Lidar3DDriverMap({
       if (laserRingsGroupRef.current) {
         const ring20 = laserRingsGroupRef.current.getObjectByName('ring20');
         if (ring20) {
-          const s = 1 + Math.sin(elapsed * 4) * 0.02;
+          const s = 1 + Math.sin(elapsed * 4.5) * 0.025;
           ring20.scale.set(s, s, 1);
         }
       }
 
       // Point cloud animation (subtle scanline shift)
       if (pointsMeshRef.current) {
-        pointsMeshRef.current.rotation.y = Math.sin(elapsed * 0.3) * 0.015;
+        pointsMeshRef.current.rotation.y = Math.sin(elapsed * 0.35) * 0.015;
       }
 
       renderer.render(scene, camera);
@@ -263,29 +262,47 @@ export default function Lidar3DDriverMap({
     };
   }, []);
 
-  // Update Fog Penetration Mode
+  // Sync Camera Mode
   useEffect(() => {
-    if (!fogRef.current) return;
-    if (fogPenetration) {
-      fogRef.current.density = 0.008;
-    } else {
-      fogRef.current.density = 0.032;
-    }
-  }, [fogPenetration]);
-
-  const handleViewChange = (view) => {
-    setCameraView(view);
     if (!cameraRef.current) return;
-    setCameraPosition(cameraRef.current, view);
-  };
+    setCameraPosition(cameraRef.current, cameraView);
+  }, [cameraView]);
+
+  // Sync Visual Modes (Daylight, Night, Fog)
+  useEffect(() => {
+    if (!sceneRef.current || !fogRef.current) return;
+    const scene = sceneRef.current;
+    const fog = fogRef.current;
+
+    if (visualMode === 'daylight') {
+      scene.background.setHex(0x64748b);
+      fog.color.setHex(0x64748b);
+      fog.density = 0.005;
+      if (ambientLightRef.current) ambientLightRef.current.intensity = 2.4;
+      if (dirLightRef.current) dirLightRef.current.intensity = 2.2;
+    } else if (visualMode === 'night') {
+      scene.background.setHex(0x020617);
+      fog.color.setHex(0x020617);
+      fog.density = 0.009;
+      if (ambientLightRef.current) ambientLightRef.current.intensity = 1.0;
+      if (dirLightRef.current) dirLightRef.current.intensity = 0.8;
+    } else {
+      // Default: Dense Pit Fog with Synthetic LiDAR Cut
+      scene.background.setHex(0x0a0f1d);
+      fog.color.setHex(0x0a0f1d);
+      fog.density = fogPenetration ? 0.008 : 0.032;
+      if (ambientLightRef.current) ambientLightRef.current.intensity = 1.8;
+      if (dirLightRef.current) dirLightRef.current.intensity = 1.5;
+    }
+  }, [visualMode, fogPenetration]);
 
   const setCameraPosition = (cam, view) => {
     if (view === 'cockpit') {
       cam.position.set(0, 3.2, 1.4);
-      cam.lookAt(0, 1.8, 45);
+      cam.lookAt(0, 1.8, 48);
     } else if (view === 'topdown') {
-      cam.position.set(0, 52, 24);
-      cam.lookAt(0, 0, 24);
+      cam.position.set(0, 56, 26);
+      cam.lookAt(0, 0, 26);
     } else {
       cam.position.set(0, 8.5, -16);
       cam.lookAt(0, 1.5, 28);
@@ -300,187 +317,9 @@ export default function Lidar3DDriverMap({
   };
 
   return (
-    <div className={`relative w-full rounded-2xl overflow-hidden border border-slate-200/90 shadow-soft bg-[#0a0f1d] transition-all ${
-      isFullscreen ? 'fixed inset-4 z-50 rounded-2xl h-[calc(100vh-2rem)]' : 'h-[580px] sm:h-[640px]'
-    }`}>
+    <div className="relative w-full h-full bg-[#070c18] overflow-hidden select-none">
       {/* 3D WebGL Canvas Container */}
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
-
-      {/* TOP BAR: HUD Header & Mode Controls */}
-      <div className="absolute top-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        {/* Left: LiDAR Perception Status Pill */}
-        <div className="pointer-events-auto flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700/80 text-white shadow-lg text-xs">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
-          <span className="font-bold tracking-tight">1550 nm 3D LiDAR Vision</span>
-          <span className="text-slate-400">•</span>
-          <span className="text-slate-300 font-mono text-[11px]">Berm Lock Active</span>
-          <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[10px] font-mono font-bold">
-            18.4k pts/s
-          </span>
-        </div>
-
-        {/* Right: Camera Mode Switcher & Tools */}
-        <div className="pointer-events-auto flex items-center gap-1.5 p-1 bg-slate-900/80 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-lg text-xs">
-          <button
-            type="button"
-            onClick={() => handleViewChange('cockpit')}
-            className={`px-2.5 py-1 rounded-lg font-medium transition ${
-              cameraView === 'cockpit' ? 'bg-sky-600 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-            }`}
-            title="Cockpit Driver POV"
-          >
-            Cockpit POV
-          </button>
-          <button
-            type="button"
-            onClick={() => handleViewChange('chase')}
-            className={`px-2.5 py-1 rounded-lg font-medium transition ${
-              cameraView === 'chase' ? 'bg-sky-600 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-            }`}
-            title="3D Chase Orbit View"
-          >
-            3D Chase
-          </button>
-          <button
-            type="button"
-            onClick={() => handleViewChange('topdown')}
-            className={`px-2.5 py-1 rounded-lg font-medium transition ${
-              cameraView === 'topdown' ? 'bg-sky-600 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-            }`}
-            title="Top-Down LiDAR Radar Map"
-          >
-            Top-Down
-          </button>
-
-          <div className="w-[1px] h-4 bg-slate-700 mx-1"></div>
-
-          {/* Fog Penetration Synthetic Vision Toggle */}
-          <button
-            type="button"
-            onClick={() => setFogPenetration(!fogPenetration)}
-            className={`px-2.5 py-1 rounded-lg font-medium text-[11px] flex items-center gap-1 transition ${
-              fogPenetration 
-                ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40' 
-                : 'bg-slate-800 text-slate-400 hover:text-white'
-            }`}
-            title="Synthetic Vision Fog Penetration"
-          >
-            <Wind className="w-3.5 h-3.5" />
-            <span>{fogPenetration ? 'Synthetic Fog Cut: ON' : 'Raw Pit Fog'}</span>
-          </button>
-
-          {/* Fullscreen Expand */}
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen 3D Map"}
-          >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-
-      {/* FLOATING HUD CARDS (CORNERS) */}
-
-      {/* Top-Left: Forward Proximity Instrument */}
-      <div className="absolute top-16 left-3 pointer-events-none">
-        <div className="pointer-events-auto bg-slate-900/85 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3.5 shadow-xl text-white w-64">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-            <span className="font-semibold uppercase tracking-wider flex items-center gap-1">
-              <Radio className="w-3.5 h-3.5 text-sky-400" />
-              Forward Proximity
-            </span>
-            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
-              safetyStatus === 'alert' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' :
-              safetyStatus === 'caution' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
-              'bg-emerald-500/20 text-emerald-300'
-            }`}>
-              {safetyStatus === 'alert' ? 'CRITICAL <20m' : safetyStatus === 'caution' ? 'CAUTION 20-50m' : 'CLEAR >50m'}
-            </span>
-          </div>
-
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-3xl font-black font-mono tracking-tight text-white">
-              {typeof radarDistance === 'number' ? radarDistance.toFixed(1) : radarDistance}
-              <span className="text-sm font-normal text-slate-400 ml-1">m</span>
-            </span>
-            <span className="text-xs font-mono font-bold text-slate-300">
-              {relativeSpeed != null ? `${relativeSpeed} km/h` : '--'}
-            </span>
-          </div>
-
-          {/* 3-Tier Distance Safety Progress Bar */}
-          <div className="mt-2.5">
-            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
-              <div 
-                className={`h-full transition-all duration-300 ${
-                  safetyStatus === 'alert' ? 'bg-rose-500' :
-                  safetyStatus === 'caution' ? 'bg-amber-400' : 'bg-emerald-400'
-                }`}
-                style={{ width: `${Math.min(100, Math.max(5, (radarDistance / 100) * 100))}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-[9px] font-mono text-slate-400 mt-1">
-              <span className="text-rose-400 font-bold">0m (Impact)</span>
-              <span className="text-amber-400 font-bold">20m (Brake)</span>
-              <span className="text-emerald-400 font-bold">50m+ (Safe)</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Top-Right: Speed & Bearing HUD */}
-      <div className="absolute top-16 right-3 pointer-events-none">
-        <div className="pointer-events-auto bg-slate-900/85 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 shadow-xl text-white flex items-center gap-3">
-          <div className="px-2 py-1 text-center">
-            <span className="text-[10px] text-slate-400 font-semibold uppercase block">Ground Speed</span>
-            <div className="flex items-baseline justify-center gap-0.5">
-              <span className="text-2xl font-black font-mono text-white">
-                {typeof speedKmh === 'number' ? speedKmh.toFixed(1) : speedKmh}
-              </span>
-              <span className="text-[10px] text-slate-400 font-bold">km/h</span>
-            </div>
-          </div>
-          <div className="w-[1px] h-8 bg-slate-700"></div>
-          <div className="px-2 py-1 text-center">
-            <span className="text-[10px] text-slate-400 font-semibold uppercase block">Bearing</span>
-            <div className="flex items-baseline justify-center gap-0.5">
-              <span className="text-2xl font-black font-mono text-sky-300">
-                {typeof headingDeg === 'number' ? headingDeg.toFixed(0) : headingDeg}°
-              </span>
-              <span className="text-[10px] text-slate-400 font-bold">HDG</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom-Left: 3D Berm Guide & Laser Rings Legend */}
-      <div className="absolute bottom-3 left-3 pointer-events-none">
-        <div className="pointer-events-auto bg-slate-900/85 backdrop-blur-md border border-slate-700/80 rounded-xl px-3 py-2 text-white shadow-lg text-[11px] font-mono flex items-center gap-3">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-            <span>20m Danger Ring</span>
-          </span>
-          <span className="text-slate-600">|</span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-            <span>50m Caution Ring</span>
-          </span>
-          <span className="text-slate-600">|</span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
-            <span>LiDAR Berm Guide Rails</span>
-          </span>
-        </div>
-      </div>
-
-      {/* Bottom-Right: Interaction Tip */}
-      <div className="absolute bottom-3 right-3 pointer-events-none">
-        <div className="bg-slate-900/70 backdrop-blur-sm border border-slate-800 text-slate-400 px-2.5 py-1 rounded-lg text-[10px] font-mono">
-          Drag to Orbit 3D • Scroll to Zoom
-        </div>
-      </div>
     </div>
   );
 }
