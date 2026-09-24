@@ -28,8 +28,15 @@ export default function DriverDashboard({
   const [telemetry, setTelemetry] = useState(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [sosActive, setSosActive] = useState(false);
+  const [selectedVehicleId, setSelectedVehicleId] = useState(currentUser?.vehicleId || "HV-TRUCK-102");
 
-  const vehicleId = currentUser?.vehicleId || "HV-TRUCK-102";
+  useEffect(() => {
+    if (currentUser?.vehicleId) {
+      setSelectedVehicleId(currentUser.vehicleId);
+    }
+  }, [currentUser]);
+
+  const vehicleId = selectedVehicleId;
 
   // Current vehicle object
   const currentVehicle = useMemo(() => {
@@ -150,6 +157,26 @@ export default function DriverDashboard({
             <p className="text-xs text-slate-500">
               Driver: <strong className="text-slate-700">{currentVehicle.driver_name}</strong> • {currentVehicle.vehicle_type}
             </p>
+            {/* Quick Haul Truck Switcher */}
+            {vehicles.length > 0 && (
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Switch Haul Truck:</span>
+                {vehicles.map(v => (
+                  <button
+                    key={v.vehicle_id}
+                    type="button"
+                    onClick={() => setSelectedVehicleId(v.vehicle_id)}
+                    className={`px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold transition border ${
+                      vehicleId === v.vehicle_id
+                        ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {v.vehicle_id.replace('HV-', '')}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

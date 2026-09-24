@@ -1,192 +1,165 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Shield, 
-  Truck, 
-  Radio, 
-  LogOut, 
-  LogIn, 
-  UserCheck, 
-  Layers, 
-  Activity, 
-  AlertTriangle,
-  RefreshCw,
-  ExternalLink,
-  ChevronDown
-} from 'lucide-react';
-import { useRole } from './components/auth/RoleContext';
-import LoginModal from './components/auth/LoginModal';
-import AdminDashboard from './components/admin/AdminDashboard';
-import DriverDashboard from './components/driver/DriverDashboard';
-import { connectFleetStream, fetchVehicles, fetchAlerts, fetchBridgeHealth } from './services/fleetApi';
 
-export default function App() {
-  const { currentUser, logout, isAdmin, isDriver, registeredVehicles, setRegisteredVehicles } = useRole();
+import React, { useState, useEffect } from 'react';
+import Header from './components/layout/Header';
+import NavigationTabs from './components/layout/NavigationTabs';
+import TopSummaryView from './components/layout/TopSummaryView';
+import DriverDashboard from './components/driver/DriverDashboard';
+import AdminDashboard from './components/admin/AdminDashboard';
+import ThermalCameraPanel from './components/sensors/ThermalCameraPanel';
+import MmWaveRadarPanel from './components/sensors/MmWaveRadarPanel';
+import Lidar3DPanel from './components/sensors/Lidar3DPanel';
+import UwbTransceiverPanel from './components/sensors/UwbTransceiverPanel';
+import GnssImuPanel from './components/sensors/GnssImuPanel';
+import LoginModal from './components/auth/LoginModal';
+import { RoleProvider, useRole } from './components/auth/RoleContext';
+import { connectLiveStream, updateSensorVolume, startRecording, stopRecording } from './services/api';
+import { fetchVehicles, fetchAlerts } from './services/fleetApi';
+
+function SafeWayApp() {
+  const { currentUser, isAdmin } = useRole();
+  const [activeTab, setActiveTab] = useState('driver_cockpit');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [snapshot, setSnapshot] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   const [alerts, setAlerts] = useState([]);
-  const [bridgeStatus, setBridgeStatus] = useState({ isConnected: false });
-  const [wsConnected, setWsConnected] = useState(false);
-
-  // Initial load of vehicles
-  const loadData = async () => {
-    try {
-      const vRes = await fetchVehicles();
-      if (vRes?.vehicles) {
-        setVehicles(vRes.vehicles);
-        setRegisteredVehicles(vRes.vehicles);
-      }
-      const aRes = await fetchAlerts();
-      if (aRes?.alerts) setAlerts(aRes.alerts);
-
-      const health = await fetchBridgeHealth();
-      setBridgeStatus(health);
-    } catch (e) {
-      console.warn("Bridge loading fallback:", e);
-    }
-  };
 
   useEffect(() => {
-    loadData();
+    fetchVehicles().then(res => {
+      if (res?.vehicles) setVehicles(res.vehicles);
+    });
 
-    // WebSocket real-time subscription
-    const stream = connectFleetStream(
+    const stream = connectLiveStream(
       (data) => {
-        if (data.type === "fleet_snapshot") {
-          if (data.vehicles) setVehicles(data.vehicles);
-          if (data.alerts) setAlerts(data.alerts);
-        }
+        setSnapshot(data);
+        if (data.alerts) setAlerts(data.alerts);
       },
-      (status) => {
-        setWsConnected(status.isConnected);
-      }
+      (status) => {}
     );
 
-    const interval = setInterval(loadData, 5000);
-
-    return () => {
-      stream.disconnect();
-      clearInterval(interval);
-    };
+    return () => stream.disconnect();
   }, []);
 
-  const handleVehicleAdded = (newV) => {
-    setVehicles(prev => {
-      const filtered = prev.filter(v => v.vehicle_id !== newV.vehicle_id);
-      return [...filtered, newV];
-    });
-    setRegisteredVehicles(prev => [...prev.filter(v => v.vehicle_id !== newV.vehicle_id), newV]);
+  const handleVolumeChange = async (sensorId, newVol) => {
+    await updateSensorVolume(sensorId, newVol);
   };
 
-  const handleVehicleDeleted = (vid) => {
-    setVehicles(prev => prev.filter(v => v.vehicle_id !== vid));
-    setRegisteredVehicles(prev => prev.filter(v => v.vehicle_id !== vid));
+  const handleStartRec = async () => {
+    await startRecording();
   };
+
+  const handleStopRec = async () => {
+    await stopRecording();
+  };
+
+  const isRec = snapshot?.isRecording ?? false;
+  const totalPersisted = snapshot?.totalPersisted ?? 1420;
+  const throughputHz = snapshot?.throughputHz ?? 62.5;
+  const activePreset = snapshot?.activePreset ?? 'balanced';
+  const volumes = snapshot?.volumes ?? {
+    thermal_camera: 35,
+    mmwave_radar: 45,
+    lidar_3d: 50,
+    uwb_rf: 25,
+    rtk_gnss_imu: 30
+  };
+  const readings = snapshot?.readings ?? {};
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col font-sans">
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          {/* Brand Logo & Name */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-600/20">
-              <Shield className="w-5 h-5 stroke-[2.2]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-base tracking-tight text-slate-900">
-                  SafeWay <span className="text-sky-600 font-black">Fleet</span>
-                </span>
-                <span className="px-1.5 py-0.5 bg-sky-50 text-sky-700 text-[10px] font-mono font-bold rounded border border-sky-200">
-                  SIH26007
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 hidden sm:block">
-                Coimbatore Mining Pit • V2V Safety & Telemetry System
-              </p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col font-sans selection:bg-sky-500/20 selection:text-sky-900">
+      {/* Unified Header */}
+      <Header
+        isConnected={true}
+        totalPersisted={totalPersisted}
+        throughputHz={throughputHz}
+        activePreset={activePreset}
+        onPresetChange={(preset) => {}}
+        isRecording={isRec}
+        onStartRecording={handleStartRec}
+        onStopRecording={handleStopRec}
+        onOpenLoginModal={() => setIsLoginModalOpen(true)}
+      />
 
-          {/* Center: Live Status Indicators */}
-          <div className="hidden md:flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-full border border-slate-200">
-              <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-              <span className="text-slate-600 font-medium">
-                Bridge Middleware {wsConnected ? "Online (Port 8001)" : "Reconnecting"}
-              </span>
-            </div>
+      {/* Navigation Tabs */}
+      <NavigationTabs
+        activeTab={activeTab}
+        onTabChange={(tabId) => setActiveTab(tabId)}
+        volumes={volumes}
+      />
 
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-full border border-slate-200 font-mono text-[11px]">
-              <span className="text-slate-400">Simulation:</span>
-              <span className="text-emerald-600 font-bold">Port 8000</span>
-            </div>
-          </div>
-
-          {/* Right: Auth / Role Control */}
-          <div className="flex items-center gap-2.5">
-            {currentUser ? (
-              <div className="flex items-center gap-2">
-                <div className="px-3 py-1.5 bg-slate-100 rounded-xl flex items-center gap-2 text-xs">
-                  <div className={`w-2 h-2 rounded-full ${isAdmin ? 'bg-sky-500' : 'bg-indigo-500'}`}></div>
-                  <div className="text-left">
-                    <div className="font-bold text-slate-900 flex items-center gap-1">
-                      <span>{currentUser.name}</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">
-                      {isAdmin ? "Admin Supervisor" : `Driver (${currentUser.vehicleId})`}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsLoginModalOpen(true)}
-                  className="px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition"
-                  title="Switch User / Role"
-                >
-                  Switch Role
-                </button>
-
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-transparent hover:border-rose-100 transition"
-                  title="Sign Out"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsLoginModalOpen(true)}
-                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition"
-              >
-                <LogIn className="w-4 h-4" />
-                <span>Sign In (Admin / Driver)</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full">
-        {isAdmin ? (
-          <AdminDashboard
-            vehicles={vehicles}
-            alerts={alerts}
-            isWsConnected={wsConnected}
-            onRefresh={loadData}
-            onVehicleAdded={handleVehicleAdded}
-            onVehicleDeleted={handleVehicleDeleted}
-          />
-        ) : (
+      {/* Main Dynamic Viewport */}
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+        {activeTab === 'driver_cockpit' && (
           <DriverDashboard
             currentUser={currentUser}
             vehicles={vehicles}
             alerts={alerts}
-            isWsConnected={wsConnected}
+            isWsConnected={true}
+          />
+        )}
+
+        {activeTab === 'fleet_admin' && (
+          <AdminDashboard
+            vehicles={vehicles}
+            alerts={alerts}
+            isWsConnected={true}
+            onRefresh={() => fetchVehicles().then(r => r?.vehicles && setVehicles(r.vehicles))}
+            onVehicleAdded={(newV) => setVehicles(prev => [...prev.filter(v => v.vehicle_id !== newV.vehicle_id), newV])}
+            onVehicleDeleted={(vid) => setVehicles(prev => prev.filter(v => v.vehicle_id !== vid))}
+          />
+        )}
+
+        {activeTab === 'overview' && (
+          <TopSummaryView
+            volumes={volumes}
+            latestReadings={readings}
+            totalPersisted={totalPersisted}
+            throughputHz={throughputHz}
+            alerts={alerts}
+            onSelectSensor={(sensorId) => setActiveTab(sensorId)}
+            onVolumeChange={handleVolumeChange}
+            isRecording={isRec}
+            onStartRecording={handleStartRec}
+            onStopRecording={handleStopRec}
+          />
+        )}
+
+        {activeTab === 'thermal_camera' && (
+          <ThermalCameraPanel
+            reading={readings.thermal_camera}
+            volume={volumes.thermal_camera}
+            onVolumeChange={(val) => handleVolumeChange('thermal_camera', val)}
+          />
+        )}
+
+        {activeTab === 'mmwave_radar' && (
+          <MmWaveRadarPanel
+            reading={readings.mmwave_radar}
+            volume={volumes.mmwave_radar}
+            onVolumeChange={(val) => handleVolumeChange('mmwave_radar', val)}
+          />
+        )}
+
+        {activeTab === 'lidar_3d' && (
+          <Lidar3DPanel
+            reading={readings.lidar_3d}
+            volume={volumes.lidar_3d}
+            onVolumeChange={(val) => handleVolumeChange('lidar_3d', val)}
+          />
+        )}
+
+        {activeTab === 'uwb_rf' && (
+          <UwbTransceiverPanel
+            reading={readings.uwb_rf}
+            volume={volumes.uwb_rf}
+            onVolumeChange={(val) => handleVolumeChange('uwb_rf', val)}
+          />
+        )}
+
+        {activeTab === 'rtk_gnss_imu' && (
+          <GnssImuPanel
+            reading={readings.rtk_gnss_imu}
+            volume={volumes.rtk_gnss_imu}
+            onVolumeChange={(val) => handleVolumeChange('rtk_gnss_imu', val)}
           />
         )}
       </main>
@@ -194,7 +167,7 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-200/80 bg-white py-4 px-6 text-center text-xs text-slate-400">
         <p>
-          SafeWay Fleet Management System • Smart India Hackathon SIH26007 • Powered by MapTiler & Firebase Firestore
+          SafeWay Fleet Management System • Smart India Hackathon SIH26007 • Firebase Firestore & MapTiler Integration
         </p>
       </footer>
 
@@ -204,5 +177,13 @@ export default function App() {
         onClose={() => setIsLoginModalOpen(false)}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <RoleProvider>
+      <SafeWayApp />
+    </RoleProvider>
   );
 }

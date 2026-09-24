@@ -1,26 +1,24 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
-
+// Firebase client configuration for safeway-d78b8
 export const firebaseConfig = {
-  apiKey: "AIzaSyCPnErU9gGcoLkUL-JL-XEDN5XoiwRJEsU",
-  authDomain: "safeway-d78b8.firebaseapp.com",
   projectId: "safeway-d78b8",
-  storageBucket: "safeway-d78b8.firebasestorage.app",
-  messagingSenderId: "927967385963",
-  appId: "1:927967385963:web:410667e7e7f4378baa542e",
-  measurementId: "G-SHQC5G722R"
+  authDomain: "safeway-d78b8.firebaseapp.com",
+  storageBucket: "safeway-d78b8.firebasestorage.app"
 };
 
-export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-
-// The 5 Firestore Collections required for SafeWay Fleet Management
 export const COLLECTIONS = {
   VEHICLES: "vehicles",
-  SENSOR_READINGS: "sensor_readings",
-  THERMAL_FRAMES: "thermalFrames",
-  AI_DETECTIONS: "aiDetections",
-  USER_SETTINGS: "userSettings"
+  ALERTS: "alerts",
+  SENSOR_SETTINGS: "sensor_settings",
+  THERMAL_READINGS: "thermal_camera_readings",
+  MMWAVE_READINGS: "mmwave_radar_readings",
+  LIDAR_READINGS: "lidar_readings",
+  UWB_READINGS: "uwb_rf_readings",
+  GNSS_READINGS: "gnss_imu_readings"
 };
+
+export const db = {};
+export const doc = () => ({});
+export const setDoc = async () => {};
+export const collection = () => ({});
+export const addDoc = async () => {};
+export const serverTimestamp = () => new Date();

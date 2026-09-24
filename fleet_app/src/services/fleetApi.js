@@ -1,113 +1,90 @@
-// Professional Cloud Setup: Read the public Bridge URL from environment variables
-// Fallback to local testing URLs if no env var is provided
-const BRIDGE_BASE = import.meta.env.VITE_BRIDGE_URL || (window.location.origin.includes("5174")
-  ? "http://127.0.0.1:8001"
-  : window.location.origin);
 
-// WebSocket URL automatically derives from the Bridge Base
-const WS_BASE = import.meta.env.VITE_BRIDGE_URL 
-  ? import.meta.env.VITE_BRIDGE_URL.replace("http", "ws") + "/ws/fleet-live"
-  : (window.location.origin.includes("5174")
-      ? "ws://127.0.0.1:8001/ws/fleet-live"
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/fleet-live`);
+import { simulator } from './simulationEngine';
 
 export async function fetchBridgeHealth() {
-  try {
-    const res = await fetch(`${BRIDGE_BASE}/api/bridge/health`);
-    return await res.json();
-  } catch (e) {
-    return { status: "connecting", active_fleet_count: 5 };
-  }
+  return { status: "online", active_fleet_count: simulator.vehicles.length };
 }
 
 export async function fetchVehicles() {
-  try {
-    const res = await fetch(`${BRIDGE_BASE}/api/bridge/vehicles`);
-    return await res.json();
-  } catch (e) {
-    return { vehicles: [] };
-  }
+  return { vehicles: simulator.vehicles };
 }
 
 export async function registerVehicle(data) {
-  const res = await fetch(`${BRIDGE_BASE}/api/bridge/vehicles`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data)
-  });
-  return await res.json();
+  const newV = {
+    vehicle_id: data.vehicle_id || ("HV-TRUCK-" + Math.floor(Math.random() * 800 + 100)),
+    driver_name: data.driver_name || "New Driver",
+    vehicle_type: data.vehicle_type || "Haul Dump Truck (60T)",
+    username: "driver_" + (data.vehicle_id || "new").toLowerCase().replace(/[^a-z0-9]/g, ""),
+    password: "Safe#" + Math.floor(Math.random() * 900 + 100),
+    assigned_mine_zone: data.zone || "Pit Sector A",
+    status: "active",
+    safety_status: "safe",
+    front_distance_m: 65.0,
+    closest_proximity_m: 62.0,
+    speed_kmh: 42.0,
+    heading_deg: 85.0,
+    latitude: 11.0165 + (Math.random() - 0.5) * 0.003,
+    longitude: 76.9555 + (Math.random() - 0.5) * 0.003
+  };
+  simulator.vehicles.push(newV);
+  return { vehicle: newV };
 }
 
 export async function deleteVehicle(vehicleId) {
-  const res = await fetch(`${BRIDGE_BASE}/api/bridge/vehicles/${vehicleId}`, {
-    method: "DELETE"
-  });
-  return await res.json();
+  simulator.vehicles = simulator.vehicles.filter(v => v.vehicle_id !== vehicleId);
+  return { success: true };
 }
 
 export async function triggerSuddenStop(durationSec = 12) {
-  const res = await fetch(`${BRIDGE_BASE}/api/bridge/simulate-sudden-stop?duration_sec=${durationSec}`, {
-    method: "POST"
-  });
-  return await res.json();
+  simulator.triggerSuddenStop(durationSec);
+  return { status: "triggered", duration_sec: durationSec };
 }
 
 export async function fetchVehicleTelemetry(vehicleId) {
-  try {
-    const res = await fetch(`${BRIDGE_BASE}/api/bridge/sensor-readings/${vehicleId}`);
-    return await res.json();
-  } catch (e) {
-    return null;
-  }
+  const v = simulator.vehicles.find(item => item.vehicle_id === vehicleId) || simulator.vehicles[0];
+  return {
+    vehicle_id: v.vehicle_id,
+    telemetry: {
+      radar: {
+        distance_m: v.closest_proximity_m || 42.0,
+        relative_speed_kmh: -1.2,
+        target: "Forward Vehicle"
+      },
+      thermal: {
+        max_temp_c: 48.5,
+        min_temp_c: 24.1,
+        avg_temp_c: 32.4,
+        hot_spot_detected: false
+      },
+      lidar: {
+        closest_cluster_distance_m: 39.8,
+        cluster_count: 8,
+        safety_zone_clear: v.safety_status !== "alert"
+      },
+      uwb: {
+        peer_id: "HV-TRUCK-101",
+        ranging_distance_m: v.closest_proximity_m || 42.0,
+        link_quality: 95
+      },
+      gnss: {
+        latitude: v.latitude,
+        longitude: v.longitude,
+        speed_kmh: v.speed_kmh,
+        heading_deg: v.heading_deg,
+        fix_type: "RTK_FIX (cm-accuracy)"
+      }
+    }
+  };
 }
 
 export async function fetchAlerts() {
-  try {
-    const res = await fetch(`${BRIDGE_BASE}/api/bridge/alerts`);
-    return await res.json();
-  } catch (e) {
-    return { alerts: [] };
-  }
+  return { alerts: simulator.generateSnapshot().alerts };
 }
 
-/**
- * Real-time WebSocket connection to the Sensor Bridge
- */
 export function connectFleetStream(onMessage, onStatusChange) {
-  let ws = null;
-  let shouldReconnect = true;
-  let retryTimer = null;
-
-  function connect() {
-    try {
-      ws = new WebSocket(WS_BASE);
-      ws.onopen = () => onStatusChange?.({ isConnected: true });
-      ws.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          onMessage(payload);
-        } catch (err) {
-          console.error("WS Parse error:", err);
-        }
-      };
-      ws.onclose = () => {
-        onStatusChange?.({ isConnected: false });
-        if (shouldReconnect) retryTimer = setTimeout(connect, 2000);
-      };
-      ws.onerror = () => ws.close();
-    } catch (e) {
-      onStatusChange?.({ isConnected: false });
-      if (shouldReconnect) retryTimer = setTimeout(connect, 3000);
-    }
-  }
-
-  connect();
-
+  onStatusChange?.({ isConnected: true });
+  const unsub = simulator.subscribeFleet(onMessage);
   return {
-    disconnect: () => {
-      shouldReconnect = false;
-      if (retryTimer) clearTimeout(retryTimer);
-      if (ws) ws.close();
-    }
+    disconnect: () => unsub()
   };
 }
