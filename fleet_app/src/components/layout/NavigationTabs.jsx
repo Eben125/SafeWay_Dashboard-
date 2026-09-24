@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
   Truck, 
@@ -13,7 +12,7 @@ import {
 
 export const NAVIGATION_TABS = [
   { id: 'driver_cockpit', name: 'Driver Fog Cockpit', icon: Truck, tag: 'Fog Assist HUD' },
-  { id: 'fleet_admin', name: 'Fleet Supervisor Map', icon: Map, tag: 'Pit Overview' },
+  { id: 'fleet_admin', name: 'Fleet Supervisor Map', icon: Map, tag: 'Pit Overview', adminOnly: true },
   { id: 'overview', name: 'Executive Overview', icon: LayoutDashboard, tag: 'Fusion Hub' },
   { id: 'thermal_camera', name: 'Thermal Camera (LWIR)', icon: Flame, tag: '30–50 m' },
   { id: 'mmwave_radar', name: '77 GHz mmWave Radar', icon: Radio, tag: '100–200 m' },
@@ -22,11 +21,13 @@ export const NAVIGATION_TABS = [
   { id: 'rtk_gnss_imu', name: 'RTK-GNSS + IMU', icon: Compass, tag: 'Centimeter' },
 ];
 
-export default function NavigationTabs({ activeTab, onTabChange, volumes = {} }) {
+export default function NavigationTabs({ activeTab, onTabChange, volumes = {}, isDriver = false }) {
+  const visibleTabs = NAVIGATION_TABS.filter(tab => !tab.adminOnly || !isDriver);
+
   return (
     <div className="border-b border-slate-200 bg-white/70 backdrop-blur-sm sticky top-[68px] z-30 px-4 lg:px-8 shadow-xs">
       <div className="max-w-7xl mx-auto flex items-center gap-2 overflow-x-auto py-2.5 no-scrollbar">
-        {NAVIGATION_TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           const vol = volumes[tab.id];

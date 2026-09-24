@@ -15,8 +15,6 @@ import {
   VolumeX,
   LifeBuoy,
   Layers,
-  Map as MapIcon,
-  Box as CubeIcon,
   BatteryCharging,
   Navigation,
   Clock,
@@ -32,7 +30,6 @@ import {
   Mic,
   Activity
 } from 'lucide-react';
-import MapTilerView from '../map/MapTilerView';
 import Lidar3DDriverMap from './Lidar3DDriverMap';
 import { fetchVehicleTelemetry, triggerSuddenStop } from '../../services/fleetApi';
 
@@ -45,7 +42,6 @@ export default function DriverDashboard({
   const [telemetry, setTelemetry] = useState(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [sosActive, setSosActive] = useState(false);
-  const [mapMode, setMapMode] = useState('3d_lidar'); // '3d_lidar' or '2d_maptiler'
   const [selectedVehicleId, setSelectedVehicleId] = useState(currentUser?.vehicleId || "HV-TRUCK-102");
   const [isSimulatingBrake, setIsSimulatingBrake] = useState(false);
 
@@ -147,30 +143,19 @@ export default function DriverDashboard({
       {/* 1. DOMINANT FULL-SCREEN 3D MAP CANVAS (OCCUPIES 85%+ SCREEN REAL ESTATE) */}
       {/* ========================================================================= */}
       <div className="absolute inset-0 w-full h-full z-0">
-        {mapMode === '3d_lidar' ? (
-          <Lidar3DDriverMap
-            currentVehicle={currentVehicle}
-            radarDistance={typeof radar.distance_m === 'number' ? radar.distance_m : 38.0}
-            relativeSpeed={radar.relative_speed_kmh}
-            safetyStatus={status}
-            headingDeg={gnss.heading_deg}
-            speedKmh={gnss.speed_kmh}
-            visualMode={visualMode}
-            cameraView={cameraView}
-            onCameraViewChange={setCameraView}
-            fogPenetration={fogPenetration}
-            onToggleFogPenetration={() => setFogPenetration(!fogPenetration)}
-          />
-        ) : (
-          <div className="w-full h-full">
-            <MapTilerView
-              vehicles={vehicles}
-              focusedVehicle={currentVehicle}
-              isDriverView={true}
-              driverVehicleId={currentVehicle.vehicle_id}
-            />
-          </div>
-        )}
+        <Lidar3DDriverMap
+          currentVehicle={currentVehicle}
+          radarDistance={typeof radar.distance_m === 'number' ? radar.distance_m : 38.0}
+          relativeSpeed={radar.relative_speed_kmh}
+          safetyStatus={status}
+          headingDeg={gnss.heading_deg}
+          speedKmh={gnss.speed_kmh}
+          visualMode={visualMode}
+          cameraView={cameraView}
+          onCameraViewChange={setCameraView}
+          fogPenetration={fogPenetration}
+          onToggleFogPenetration={() => setFogPenetration(!fogPenetration)}
+        />
       </div>
 
       {/* ========================================================================= */}
@@ -539,14 +524,10 @@ export default function DriverDashboard({
 
             {/* Right: Map Type Toggle (3D vs 2D) & Audio Alarm Toggle */}
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setMapMode(mapMode === '3d_lidar' ? '2d_maptiler' : '3d_lidar')}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-sky-400 border border-slate-800 transition"
-              >
-                {mapMode === '3d_lidar' ? <MapIcon className="w-3.5 h-3.5 text-indigo-400" /> : <CubeIcon className="w-3.5 h-3.5 text-sky-400" />}
-                <span>{mapMode === '3d_lidar' ? "2D Map" : "3D LiDAR"}</span>
-              </button>
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="font-mono text-[11px] tracking-wide">1550nm LiDAR SYNTHETIC HUD</span>
+              </div>
 
               <button
                 type="button"

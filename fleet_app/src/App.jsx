@@ -16,7 +16,13 @@ import { connectLiveStream, updateSensorVolume, startRecording, stopRecording } 
 import { fetchVehicles, fetchAlerts } from './services/fleetApi';
 
 function SafeWayApp() {
-  const { currentUser, isAdmin } = useRole();
+  const { currentUser, isAdmin, isDriver } = useRole();
+
+  useEffect(() => {
+    if (isDriver && activeTab === 'fleet_admin') {
+      setActiveTab('driver_cockpit');
+    }
+  }, [isDriver, activeTab]);
   const [activeTab, setActiveTab] = useState('driver_cockpit');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [snapshot, setSnapshot] = useState(null);
@@ -84,6 +90,7 @@ function SafeWayApp() {
         activeTab={activeTab}
         onTabChange={(tabId) => setActiveTab(tabId)}
         volumes={volumes}
+        isDriver={isDriver || currentUser?.role === 'driver'}
       />
 
       {/* Main Dynamic Viewport */}
